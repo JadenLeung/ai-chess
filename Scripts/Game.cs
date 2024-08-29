@@ -1448,6 +1448,22 @@ public class Game : MonoBehaviour
             GameObject.FindGameObjectWithTag("desctext").GetComponent<Text>().text = "";
             canrequest = false;
             string brain = currentPlayer == "white" ? whitebrain : blackbrain;
+            if (nomoves(currentPlayer)) {
+                if (inCheck(currentPlayer)) {
+                    Winner(currentPlayer == "white" ? "black": "white");
+                } else {
+                    Winner("stalemate");
+                }
+                brain = "none";
+            }
+            if (insufficientMaterial()) {
+                Winner("insufficient material");
+                brain = "none";
+            }   
+            if (halfMoves() >= 100) {
+                Winner("the 50 move rule");
+                brain = "none";
+            } 
             switch (brain) {
                 case "user":
                     break;
