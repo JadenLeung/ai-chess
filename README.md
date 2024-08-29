@@ -7,7 +7,9 @@ https://jadenleung.itch.io/ai-chess
 
 Select between GPT-4o-mini, Gemini, Stockfish 15, Randombot, and yourself to compete in a chess game! <br/>
 
-Additionally, you can strengthen both Gemini/GPT by adjusting the stockfish percentage, representing the chance that stockfish takes over Gemini/GPT's moves. 
+Additionally, you can strengthen both Gemini/GPT by adjusting the stockfish percentage, representing the chance that stockfish takes over Gemini/GPT's moves. <br/>
+
+This backend code can be found in https://github.com/JadenLeung/flask-chess
 
 <h3>Have fun!</h3>
 
