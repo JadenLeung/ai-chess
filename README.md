@@ -1,3 +1,6 @@
+<img width="495" alt="image" src="https://github.com/user-attachments/assets/a0a318cf-b171-4047-812c-a86802dff72c">
+
+
 # AI Plays: Chess
 
 <h3>Play Now</h3>
