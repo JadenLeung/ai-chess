@@ -1489,7 +1489,7 @@ public class Game : MonoBehaviour
             }
         }
         if (!gameOver && threeFold()) {
-            Winner("threefold repitition");
+            Winner("threefold repetition");
         }
         if(numPiece("Wking") == 0 && whitekings > 0 && moves > 0){
             whitekings = 0; 
