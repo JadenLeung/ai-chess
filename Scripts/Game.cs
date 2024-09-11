@@ -5,7 +5,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.Networking;
+using UnityEngine.Networking; 
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;  
 
@@ -77,6 +77,8 @@ public class Game : MonoBehaviour
     public List<string> redo = new List<string>();
     public List<string> allmoves = new List<string>();
     public List<string> redomoves = new List<string>();
+
+    public List<int> material = new List<int>();
 
     public List<int> undospent = new List<int>();
     public List<int> redospent = new List<int>();
@@ -263,6 +265,7 @@ public class Game : MonoBehaviour
         }
 
         playSound(recentmove);
+        material.Add(materialAd());
         moves++;  
         if(currentPlayer == "white"){
             currentPlayer = "black";
@@ -466,6 +469,54 @@ public class Game : MonoBehaviour
             starty += dy;
         }
         return block; 
+    }
+
+    public int materialAd() {
+        int ad = 0;
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (positions[i,j] == null) continue;
+                string name = getPiece(i,j);
+                if (name[0] == 'W') {
+                    ad += getWorth(getLetterFromPiece(name));
+                } else {
+                    ad -= getWorth(getLetterFromPiece(name));
+                }
+            }
+        }
+        Debug.Log("Material ad is " + ad);
+        return ad;
+    }
+    public int getWorth(string p) {
+        Dictionary<string, int> allpieces = new Dictionary<string, int>();
+        allpieces[""] = 1; 
+        allpieces["K"] = 0; 
+        allpieces["N"] = 3; 
+        allpieces["R"] = 5; 
+        allpieces["Q"] = 9; 
+        allpieces["B"] = 3;
+        return allpieces[p];
+    }
+
+    public Coords evalData(int upper, int n) { // x is the min and y is the max, n is the number of numbers sampled
+        if (upper + n > material.Count) return new Coords(0, 0);
+        List<int> sample = new List<int>();
+        int min = 0;
+        int max = 0;
+        for (int i = 0; i < upper; i++) {
+            sample.Clear();
+            for (int j = i; j < i + n; j++) {
+                sample.Add(material[j]);
+            }
+            //int closestToZero = sample.OrderBy(n => Mathf.Abs(n)).ThenBy(n => n).First();
+            sample.Sort();
+            int closestToZero = sample[sample.Count / 2];
+
+        // Find and print the median
+            if (closestToZero > max) max = closestToZero;
+            if (closestToZero < min) min = closestToZero;
+        }
+        return new Coords(min, max);
     }
 
     public bool inCheck(string color) { // color of the king in check
@@ -725,19 +776,47 @@ public class Game : MonoBehaviour
             string check = inCheck(currentPlayer) ? ". Remember, you are in check, and sometimes you can capture the piece checking you." : "";
             string jsonString = $"{{\"fen\":\"{position}\",\"color\":\"{currentPlayer}\",\"prev\":\"{prev}\",\"model\":\"{model}\"}}";
             Debug.Log(jsonString);
-            StartCoroutine(PostRequest("https://monkey2.azurewebsites.net/submit", jsonString));
+            StartCoroutine(PostRequest("https://monkey2.azurewebsites.net/submit", jsonString, "bot"));
     }
 
-    public void fishReq() {
-        sendingreq = true;
-        Debug.Log("Trying to get stockfish request");
-        GameObject.FindGameObjectWithTag("desctext").GetComponent<Text>().text = "Attempting to get Stockfish request";
+    public void fishReq(bool move = true) {
+        if (move) {
+            sendingreq = true;
+            GameObject.FindGameObjectWithTag("desctext").GetComponent<Text>().text = "Attempting to get Stockfish request";
+            Debug.Log("Trying to get stockfish request");
+        }
+
         string fen = getFEN();
         int depth = 11;
-        StartCoroutine(GetRequest($"https://stockfish.online/api/s/v2.php?fen={fen}&depth={depth}"));
+        StartCoroutine(GetRequest($"https://stockfish.online/api/s/v2.php?fen={fen}&depth={depth}", move));
+    } 
+    
+    public void statsReq(string result) {
+        Debug.Log("Trying to post eval request");
+        string fen = getFEN(true);
+        string wp = Capital(whitebrain);
+        string bp = Capital(blackbrain);
+        Coords temp = evalData(material.Count - 3, 3);
+        Coords temp2 = evalData(20, 3);
+        Coords temp3 = evalData(40, 3); 
+        int spercent = (wp == "Gemini" || wp == "GPT" || bp == "Gemini" || bp == "GPT") ? fishhelp : 0;
+        string jsonString = $"{{\"result\":\"{result}\",\"white\":\"{wp}\",\"black\":\"{bp}\",\"earlymaxeval\":{temp2.y},\"earlymineval\":{temp2.x},\"midmaxeval\":{temp3.y},\"midmineval\":{temp3.x},\"maxeval\":{temp.y},\"mineval\":{temp.x},\"stockfishp\":{spercent},\"allmoves\":\"{renderMoves()}\",\"fen\":\"{fen}\"}}";
+        Debug.Log(jsonString);
+        StartCoroutine(PostRequest("https://monkey2.azurewebsites.net/insert", jsonString, "stats"));
     }
 
-    IEnumerator GetRequest(string url)
+    // public void fishReq() {
+    //     sendingreq = true;
+    //     Debug.Log("Trying to get eval request");
+    //     string fen = getFEN(true);
+    //     int depth = 15;
+    //     int maxThinkingTime = 50;
+    //     string jsonString = $"{{\"fen\":\"{fen}\",\"depth\":{depth},\"maxThinkingTime\":{maxThinkingTime}}}";
+    //     Debug.Log(jsonString);
+    //     StartCoroutine(PostRequest("https://chess-api.com/v1", jsonString, "fish"));
+    // }
+
+    IEnumerator GetRequest(string url, bool move) 
     {
         // Create a UnityWebRequest for the GET request
         UnityWebRequest request = UnityWebRequest.Get(url);
@@ -749,7 +828,7 @@ public class Game : MonoBehaviour
         if (request.result != UnityWebRequest.Result.Success)
         {
             Debug.LogError("Error: " + request.error);
-            fishReq();
+            fishReq(move);
             yield return null;
         }
         else
@@ -758,18 +837,26 @@ public class Game : MonoBehaviour
             string jsonString = request.downloadHandler.text;
             Debug.Log("Response: " + jsonString);
             if (jsonString == "") {
-                fishReq();
+                fishReq(move);
                 yield return null;
             }
             JObject jsonObject = JObject.Parse(jsonString);
             string s = jsonObject["bestmove"].ToString();
+            string e = jsonObject["evaluation"].ToString();
+            string m = jsonObject["mate"].ToString();
             string ans = s.Split(' ')[1];
-            Debug.Log("Bestmove is " + ans);
+            if (move) {
+                Debug.Log("Bestmove is " + ans);
+            } else {
+                Debug.Log("m is " + m + ", e is " + e);
+                Debug.Log("Evaluation is " + ((m == "") ? e : ("M" + m)));
+            }
             sendingreq = false;
-            moveBot(new string[]{ans}, 0, true);
+            if (move)
+                moveBot(new string[]{ans}, 0, true);
         }
     }
-    IEnumerator PostRequest(string url, string jsonData)
+    IEnumerator PostRequest(string url, string jsonData, string rec)
     {
         // Create a UnityWebRequest for the POST request
         UnityWebRequest request = new UnityWebRequest(url, "POST");
@@ -789,17 +876,38 @@ public class Game : MonoBehaviour
         if (request.result != UnityWebRequest.Result.Success)
         {
             Debug.LogError("Error: " + request.error);
+            //fishReq(); 
             yield return null;
         }
         else
         {
-            // Request was successful, process the response
-            string message = request.downloadHandler.text;
-            Debug.Log("Message: " + message);
-            string[] processed = processText(message);
-            Debug.Log("Response: " + string.Join(" ", processed));
-            sendingreq = false;
-            moveBot(processed, 0);
+            if (rec == "stats") {
+                Debug.Log("Successfully posted to mongodb");
+            } else 
+            if (rec == "fish") {
+                // Stockfish 17
+                string jsonString = request.downloadHandler.text;
+                Debug.Log("Response: " + jsonString);
+                if (jsonString == "") {
+                    fishReq();
+                    yield return null;
+                }
+                JObject jsonObject = JObject.Parse(jsonString);
+                string e = jsonObject["text"].ToString();
+                string move = jsonObject["from"].ToString() + jsonObject["to"].ToString();
+                Debug.Log("Text is " + e);
+                Debug.Log("Move is " + move);
+                sendingreq = false;
+                moveBot(new string[]{move}, 0, true);
+            } else if (rec == "bot") {
+                // Gemini/GPT
+                string message = request.downloadHandler.text;
+                Debug.Log("Message: " + message);
+                string[] processed = processText(message);
+                Debug.Log("Response: " + string.Join(" ", processed));
+                sendingreq = false;
+                moveBot(processed, 0);
+            }
         }
     }
 
@@ -998,6 +1106,7 @@ public class Game : MonoBehaviour
         redospent.Clear();
         allmoves.Clear();
         redomoves.Clear();
+        material.Clear();
         pawnpromote = false;
         gameOver = false;
         deleteLines = true;
@@ -1283,14 +1392,14 @@ public class Game : MonoBehaviour
         str = str.Substring(0, str.Length - 1);
         return renderStringPosition(str);
     } 
-    public string getFEN() {
+    public string getFEN(bool fake = false) {
         string s = getStringPosition();
         s += " " + currentPlayer[0] + " ";
         string castle = castleFEN();
         s += (castle == "" ? "-" : castle) + " ";
         string passant = passantFEN();
-        s += (passant == "" ? "-" : passant) + " " + halfMoves() + " ";
-        s += allmoves.Count / 2;
+        s += ((passant == "" || fake) ? "-" : passant) + " " + halfMoves() + " ";
+        s += allmoves.Count / 2 + 1;
         return s;
     }
     public string castleFEN() {
@@ -1513,7 +1622,7 @@ public class Game : MonoBehaviour
                 GameObject.FindGameObjectWithTag("WinnerText").GetComponent<Text>().enabled = false;
         }
         if(Input.GetKeyDown("left shift")){  //shift
-            fishReq();
+            fishReq(false);
         }
         if(Input.GetKeyDown("tab")){  //shift
             gameOver = !gameOver;
@@ -1527,10 +1636,17 @@ public class Game : MonoBehaviour
             foreach (string s in redo) {
                 Debug.Log(s);
             }
+            Debug.Log("Material");
+            string temp = "";
+            foreach (int s in material) {
+                temp += s + " ";
+            }
+            Debug.Log(temp);
             string position = getStringPosition();
             string prev = renderMoves();
             Debug.Log(prev);
-            Debug.Log(fishhelp);
+            Debug.Log(getFEN());
+            Debug.Log(evalData(material.Count - 3, 3));
         }
         if(Input.GetKeyDown("return")){  //enter
             moveBot(new string[] {"bruh"}, 100);
@@ -1936,6 +2052,7 @@ public class Game : MonoBehaviour
     public void Winner(string playerWinner){
         if(mode == "levels") return;
         gameOver = true;
+        statsReq(playerWinner);
         GameObject.FindGameObjectWithTag("WinnerText").GetComponent<Text>().enabled = true;
 
         restartbutton.SetActive(true);
