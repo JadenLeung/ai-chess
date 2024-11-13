@@ -78,7 +78,8 @@ public class Game : MonoBehaviour
     public List<string> allmoves = new List<string>();
     public List<string> redomoves = new List<string>();
 
-    public List<int> material = new List<int>();
+    public List<float> material = new List<float>();
+    public List<float> eval = new List<float>();
 
     public List<int> undospent = new List<int>();
     public List<int> redospent = new List<int>();
@@ -265,6 +266,9 @@ public class Game : MonoBehaviour
         }
 
         playSound(recentmove);
+        if (whitebrain != "random" && blackbrain != "random" && (moves == 20 || (moves % 40 == 0 && moves != 0)) ) {
+            evalReq();
+        } 
         material.Add(materialAd());
         moves++;  
         if(currentPlayer == "white"){
@@ -347,7 +351,8 @@ public class Game : MonoBehaviour
     public bool insufficientMaterial() {
         Dictionary<string, int> allpieces = allPieces();
         if (allpieces["R"] == 0 && allpieces["Q"] == 0 && allpieces[""] == 0) {
-            return (allpieces["B"] < 2 && allpieces["N"] == 0) || (allpieces["N"] < 3 && allpieces["B"] == 0);
+            return (allpieces["N"] < 3 && allpieces["B"] == 0) || 
+            (numPiece("Wknight") + numPiece("Wbishop") < 2 && numPiece("Bknight") + numPiece("Bbishop") < 2);
         }
         return false;
     }
@@ -498,11 +503,11 @@ public class Game : MonoBehaviour
         return allpieces[p];
     }
 
-    public Coords evalData(int upper, int n) { // x is the min and y is the max, n is the number of numbers sampled
-        if (upper + n > material.Count) return new Coords(0, 0);
-        List<int> sample = new List<int>();
-        int min = 0;
-        int max = 0;
+    public float[] evalData(int upper, int n) { // x is the min and y is the max, n is the number of numbers sampled
+        if (upper + n > material.Count) return new float[]{0, 0};
+        List<float> sample = new List<float>();
+        float min = 0;
+        float max = 0;
         for (int i = 0; i < upper; i++) {
             sample.Clear();
             for (int j = i; j < i + n; j++) {
@@ -510,13 +515,13 @@ public class Game : MonoBehaviour
             }
             //int closestToZero = sample.OrderBy(n => Mathf.Abs(n)).ThenBy(n => n).First();
             sample.Sort();
-            int closestToZero = sample[sample.Count / 2];
+            float closestToZero = sample[sample.Count / 2];
 
         // Find and print the median
             if (closestToZero > max) max = closestToZero;
             if (closestToZero < min) min = closestToZero;
         }
-        return new Coords(min, max);
+        return new float[]{min, max};
     }
 
     public bool inCheck(string color) { // color of the king in check
@@ -763,6 +768,15 @@ public class Game : MonoBehaviour
         }
         NextTurn();
     }
+    public string renderEval(float f) {
+        if (f > 900) {
+            return "M" + (1000-f);
+        } else if (f < -900) {
+            return "-M" + (-1000-f);
+        } else {
+            return f + "";
+        }
+    }
     public void randomReq() {
         moveBot(new string[] {"bruh"}, 100);
     }
@@ -790,31 +804,44 @@ public class Game : MonoBehaviour
         int depth = 11;
         StartCoroutine(GetRequest($"https://stockfish.online/api/s/v2.php?fen={fen}&depth={depth}", move));
     } 
+
+    public void evalReq() {
+        Debug.Log("Trying to get eval request");
+        string fen = getFEN(true);
+        int depth = 15;
+        int maxThinkingTime = 50;
+        string jsonString = $"{{\"fen\":\"{fen}\",\"depth\":{depth},\"maxThinkingTime\":{maxThinkingTime}}}";
+        Debug.Log(jsonString);
+        StartCoroutine(PostRequest("https://chess-api.com/v1", jsonString, "fish"));
+    }
+
     
     public void statsReq(string result) {
         Debug.Log("Trying to post eval request");
         string fen = getFEN(true);
         string wp = Capital(whitebrain);
         string bp = Capital(blackbrain);
-        Coords temp = evalData(material.Count - 3, 3);
-        Coords temp2 = evalData(20, 3);
-        Coords temp3 = evalData(40, 3); 
+        float[] temp = evalData(material.Count - 3, 3);
+        float[] temp2 = evalData(20, 3);
+        float[] temp3 = evalData(40, 3); 
+        string e10 = eval.Count > 0 ? renderEval(eval[0]) : "N/A";
+        string e20 = eval.Count > 1 ? renderEval(eval[1]) : "N/A";
+        string e40 = eval.Count > 2 ? renderEval(eval[2]) : "N/A";
+        string eall = eval.Count > 1 ? renderEval(eval[eval.Count - 1]) : "N/A";
+        result = result == "white" ? ("W-" + wp) : (result == "black" ? ("B-" + bp) : result);
         int spercent = (wp == "Gemini" || wp == "GPT" || bp == "Gemini" || bp == "GPT") ? fishhelp : 0;
-        string jsonString = $"{{\"result\":\"{result}\",\"white\":\"{wp}\",\"black\":\"{bp}\",\"earlymaxeval\":{temp2.y},\"earlymineval\":{temp2.x},\"midmaxeval\":{temp3.y},\"midmineval\":{temp3.x},\"maxeval\":{temp.y},\"mineval\":{temp.x},\"stockfishp\":{spercent},\"allmoves\":\"{renderMoves()}\",\"fen\":\"{fen}\"}}";
+        string m = "";
+        foreach (float s in material) {
+            m += s + " ";
+        }
+        string e = "";
+        foreach (float s in eval) {
+            e += s + " ";
+        }
+        string jsonString = $"{{\"result\":\"{result}\",\"white\":\"{wp}\",\"black\":\"{bp}\",\"10eval\":\"{e10}\",\"20eval\":\"{e20}\",\"40eval\":\"{e40}\",\"done_eval\":\"{eall}\",\"20maxmaterial\":{renderEval(temp2[1])},\"20minmaterial\":{renderEval(temp2[0])},\"40maxmaterial\":{renderEval(temp3[1])},\"40minmaterial\":{renderEval(temp3[0])},\"allmaxmaterial\":{renderEval(temp[1])},\"allminmaterial\":{renderEval(temp[0])},\"stockfishp\":{spercent},\"allevals\":\"{e}\",\"allmaterials\":\"{m}\",\"allmoves\":\"{renderMoves()}\",\"fen\":\"{fen}\"}}";
         Debug.Log(jsonString);
         StartCoroutine(PostRequest("https://monkey2.azurewebsites.net/insert", jsonString, "stats"));
     }
-
-    // public void fishReq() {
-    //     sendingreq = true;
-    //     Debug.Log("Trying to get eval request");
-    //     string fen = getFEN(true);
-    //     int depth = 15;
-    //     int maxThinkingTime = 50;
-    //     string jsonString = $"{{\"fen\":\"{fen}\",\"depth\":{depth},\"maxThinkingTime\":{maxThinkingTime}}}";
-    //     Debug.Log(jsonString);
-    //     StartCoroutine(PostRequest("https://chess-api.com/v1", jsonString, "fish"));
-    // }
 
     IEnumerator GetRequest(string url, bool move) 
     {
@@ -847,11 +874,12 @@ public class Game : MonoBehaviour
             string ans = s.Split(' ')[1];
             if (move) {
                 Debug.Log("Bestmove is " + ans);
+                sendingreq = false;
             } else {
                 Debug.Log("m is " + m + ", e is " + e);
                 Debug.Log("Evaluation is " + ((m == "") ? e : ("M" + m)));
+                material.Add(((m == "") ? float.Parse(e) : (float.Parse(m) > 0 ? (1000 - float.Parse(m)) : (-1000 - float.Parse(m)))));
             }
-            sendingreq = false;
             if (move)
                 moveBot(new string[]{ans}, 0, true);
         }
@@ -883,6 +911,7 @@ public class Game : MonoBehaviour
         {
             if (rec == "stats") {
                 Debug.Log("Successfully posted to mongodb");
+                restart();
             } else 
             if (rec == "fish") {
                 // Stockfish 17
@@ -893,12 +922,10 @@ public class Game : MonoBehaviour
                     yield return null;
                 }
                 JObject jsonObject = JObject.Parse(jsonString);
-                string e = jsonObject["text"].ToString();
-                string move = jsonObject["from"].ToString() + jsonObject["to"].ToString();
-                Debug.Log("Text is " + e);
-                Debug.Log("Move is " + move);
-                sendingreq = false;
-                moveBot(new string[]{move}, 0, true);
+                string e = jsonObject["eval"].ToString();
+                string m = jsonObject["mate"].ToString();
+                Debug.Log("Evaluation is " + ((m == "") ? e : ("M" + m)));
+                eval.Add(((m == "") ? float.Parse(e) : (float.Parse(m) > 0 ? (1000 - float.Parse(m)) : (-1000 - float.Parse(m)))));
             } else if (rec == "bot") {
                 // Gemini/GPT
                 string message = request.downloadHandler.text;
@@ -1099,6 +1126,8 @@ public class Game : MonoBehaviour
         }
     }
     public void restart(bool saveit = false){
+        material.Clear();
+        eval.Clear();
         canrequest = true;
         sendingreq = false;
         DestroyAllPlates(); 
@@ -1621,8 +1650,8 @@ public class Game : MonoBehaviour
             if(!gameOver && mode != "levels")
                 GameObject.FindGameObjectWithTag("WinnerText").GetComponent<Text>().enabled = false;
         }
-        if(Input.GetKeyDown("left shift")){  //shift
-            fishReq(false);
+        if(Input.GetKeyDown("left shift")){  //shift 
+            evalReq();
         }
         if(Input.GetKeyDown("tab")){  //shift
             gameOver = !gameOver;
